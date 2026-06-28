@@ -367,7 +367,7 @@
             <div class="stat-box warn">
                 <p class="text-xs text-red-400/60 mb-2 tracking-wider">今日消耗 TODAY</p>
                 <p class="stat-value text-red-300" id="todayUsage">¥ 0.00</p>
-                <p class="text-xs text-red-500/50 mt-1">当日累计</p>
+                <p class="text-xs text-red-500/50 mt-1">当日累计实时累加</p>
             </div>
             <div class="stat-box col-span-2 md:col-span-1">
                 <p class="text-xs text-yellow-400/60 mb-2 tracking-wider">账户状态 STATUS</p>
@@ -392,7 +392,7 @@
             <div class="cyber-card p-6">
                 <div class="corner-deco corner-tl"></div>
                 <div class="corner-deco corner-br"></div>
-                <div class="section-title">每小时消耗统计</div>
+                <div class="section-title">每小时实时消耗统计</div>
                 <div class="chart-wrap">
                     <canvas id="hourUsageBarChart"></canvas>
                 </div>
@@ -402,7 +402,7 @@
             <div class="cyber-card p-6">
                 <div class="corner-deco corner-tl"></div>
                 <div class="corner-deco corner-br"></div>
-                <div class="section-title">每日消耗统计</div>
+                <div class="section-title">每日累计消耗统计</div>
                 <div class="chart-wrap">
                     <canvas id="usageBarChart"></canvas>
                 </div>
@@ -419,7 +419,7 @@
             <div class="flex flex-wrap justify-between items-center gap-4 mb-5">
                 <div>
                     <p class="text-sm text-cyan-400/80">自动刷新模式</p>
-                    <p class="text-xs text-cyan-400/40">开启后定时采样余额，消耗统计精度更高</p>
+                    <p class="text-xs text-cyan-400/40">开启后定时采样余额，消耗实时累加，无需凌晨统一刷新</p>
                 </div>
                 <div class="flex items-center gap-4">
                     <select id="refreshInterval" class="cyber-select">
@@ -586,28 +586,28 @@
                 const lastBalanceRaw = localStorage.getItem(LAST_BALANCE_KEY);
                 const lastBalance = Number(lastBalanceRaw);
 
-                // 产生消耗时分别累加今日、当前小时
+                // 产生消耗时实时累加今日、当前小时数据，立刻刷新页面，无需等凌晨
                 if (!isNaN(lastBalance)) {
                     const diff = lastBalance - total;
                     if (diff > 0.001) {
                         const today = getTodayStr();
                         const hourKey = getHourKey();
 
-                        // 今日全天累计消耗
+                        // 今日全天累计消耗（实时叠加）
                         const dailyData = getDailyUsage();
                         let dayVal = Number(dailyData[today] || 0);
                         dayVal = dayVal + diff;
                         dailyData[today] = dayVal.toFixed(2);
                         saveDailyUsage(dailyData);
 
-                        // 当前小时段累计消耗
+                        // 当前小时段累计消耗（实时叠加）
                         const hourData = getHourlyUsage();
                         let hourVal = Number(hourData[hourKey] || 0);
                         hourVal = hourVal + diff;
                         hourData[hourKey] = hourVal.toFixed(2);
                         saveHourlyUsage(hourData);
 
-                        // 刷新面板+两张图表
+                        // 实时刷新消耗面板、两张图表，数据立即上涨
                         updateTodayUsage();
                         updateUsageChart();
                         updateHourChart();
@@ -643,13 +643,12 @@
             updatePieChart(granted, topped);
         }
 
-        // 今日消耗面板渲染，多层转数字杜绝NaN
+        // 今日消耗面板实时渲染，实时显示当日全部累加总额
         function updateTodayUsage() {
             const today = getTodayStr();
             const dailyData = getDailyUsage();
             let raw = dailyData[today];
             let num = Number(raw);
-            // 仅当无法转为数字才置0，正常小数保留原值
             if (isNaN(num)) num = 0;
             document.getElementById("todayUsage").textContent = "¥ " + num.toFixed(2);
         }
@@ -733,7 +732,7 @@
             pieChart.update();
         }
 
-        // 更新小时图表，仅展示今日最近12小时
+        // 更新小时图表，仅展示今日最近12小时实时数据
         function updateHourChart() {
             const hourData = getHourlyUsage();
             const today = getTodayStr();
@@ -749,7 +748,7 @@
             hourChart.update();
         }
 
-        // 更新七日每日消耗图表
+        // 更新七日每日消耗图表，当日数值实时上涨
         function updateUsageChart() {
             const dayData = getDailyUsage();
             const dayList = Object.keys(dayData).sort().slice(-7);
@@ -760,6 +759,7 @@
             const labels = dayList.map(d => d.slice(5));
             usageChart.data.labels = labels;
             usageChart.data.datasets[0].data = values;
+            usageChart.update();
         }
 
         // 自动刷新定时器切换
@@ -776,7 +776,7 @@
             fetchBalance();
         }
 
-        // 对话测试接口
+        // 对话测试接口，调用后自动刷新消耗实时数据
         async function testChat() {
             const key = getKey();
             if (!key) return alert("请先输入密钥");
@@ -808,6 +808,7 @@
                     reply.textContent = json.choices[0].message.content;
                     const t = json.usage;
                     costText.textContent = `耗时: ${dur}s | 输入: ${t.prompt_tokens} tokens | 输出: ${t.completion_tokens} tokens`;
+                    // 请求完成立刻拉取余额，实时更新消耗
                     setTimeout(fetchBalance, 1200);
                 } else {
                     reply.textContent = "ERROR: " + (json.error?.message || "未知错误");
