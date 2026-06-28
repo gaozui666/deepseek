@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek 密钥监控终端</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+        background: #05070f;
+        background-image: 
+            linear-gradient(rgba(0, 200, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 200, 255, 0.03) 1px, transparent 1px),
+            radial-gradient(circle at 15% 25%, rgba(0, 200, 255, 0.15) 0%, transparent 35%),
+            radial-gradient(circle at 85% 75%, rgba(255, 0, 128, 0.12) 0%, transparent 35%);
+        background-size: 40px 40px, 40px 40px, 100% 100%, 100% 100%;
+        font-family: "Orbitron", "PingFang SC", system-ui, sans-serif;
+        color: #e0f2ff;
+        min-height: 100vh;
+        position: relative;
+        overflow-x: hidden;
+    }
+
+    body::before {
+        content: "";
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: repeating-linear-gradient(
+            0deg,
+            rgba(0, 255, 255, 0.02) 0px,
+            rgba(0, 255, 255, 0.02) 1px,
+            transparent 1px,
+            transparent 3px
+        );
+        pointer-events: none;
+        z-index: 1;
+        animation: scanline 8s linear infinite;
+    }
+
+    @keyframes scanline {
+        0% { background-position: 0 0; }
+        100% { background-position: 0 100px; }
+    }
+
+    .cyber-card {
+        position: relative;
+        background: linear-gradient(135deg, rgba(10, 20, 40, 0.85), rgba(20, 10, 40, 0.75));
+        backdrop-filter: blur(25px);
+        border: 1px solid transparent;
+        border-image: linear-gradient(135deg, #00d4ff, #ff00aa, #00d4ff) 1;
+        border-radius: 0;
+        clip-path: polygon(
+            0 12px, 12px 0, calc(100% - 12px) 0, 100% 12px,
+            100% calc(100% - 12px), calc(100% - 12px) 100%,
+            12px 100%, 0 calc(100% - 12px)
+        );
+        box-shadow: 
+            0 0 30px rgba(0, 212, 255, 0.15),
+            inset 0 0 30px rgba(0, 212, 255, 0.05);
+        transition: all 0.4s ease;
+    }
+
+    .cyber-card::before,
+    .cyber-card::after {
+        content: "";
+        position: absolute;
+        width: 20px; height: 20px;
+        border: 2px solid #00ffff;
+    }
+    .cyber-card::before {
+        top: 4px; left: 4px;
+        border-right: none; border-bottom: none;
+    }
+    .cyber-card::after {
+        bottom: 4px; right: 4px;
+        border-left: none; border-top: none;
+    }
+
+    .cyber-card:hover {
+        box-shadow: 
+            0 0 50px rgba(0, 212, 255, 0.25),
+            inset 0 0 40px rgba(255, 0, 170, 0.08);
+    }
+
+    .glow-title {
+        background: linear-gradient(90deg, #00ffff, #ff00aa, #00ffff);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: shine 4s linear infinite;
+        text-shadow: 0 0 40px rgba(0, 255, 255, 0.3);
+        letter-spacing: 3px;
+    }
+
+    @keyframes shine {
+        0% { background-position: 0% center; }
+        100% { background-position: 200% center; }
+    }
+
+    .stat-box {
+        position: relative;
+        background: linear-gradient(180deg, rgba(0, 40, 80, 0.6), rgba(40, 0, 60, 0.4));
+        border: 1px solid rgba(0, 255, 255, 0.3);
+        padding: 18px;
+        clip-path: polygon(0 0, 100% 0, 100% 85%, 92% 100%, 0 100%);
+        transition: all 0.3s;
+    }
+
+    .stat-box:hover {
+        border-color: rgba(0, 255, 255, 0.8);
+        box-shadow: 0 0 25px rgba(0, 255, 255, 0.3);
+        transform: translateY(-3px);
+    }
+
+    .stat-box.warn {
+        background: linear-gradient(180deg, rgba(80, 10, 30, 0.7), rgba(100, 20, 40, 0.5));
+        border-color: rgba(255, 60, 100, 0.4);
+    }
+    .stat-box.warn:hover {
+        border-color: rgba(255, 60, 100, 0.9);
+        box-shadow: 0 0 25px rgba(255, 60, 100, 0.35);
+    }
+
+    .stat-value {
+        font-size: 28px;
+        font-weight: 700;
+        font-family: "Orbitron", monospace;
+        text-shadow: 0 0 15px currentColor;
+    }
+
+    .cyber-input {
+        background: rgba(0, 20, 40, 0.8);
+        border: 1px solid rgba(0, 255, 255, 0.3);
+        color: #00ffff;
+        padding: 12px 16px;
+        outline: none;
+        font-family: monospace;
+        letter-spacing: 1px;
+        transition: all 0.3s;
+        clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    }
+
+    .cyber-input:focus {
+        border-color: #00ffff;
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.4), inset 0 0 15px rgba(0, 255, 255, 0.1);
+    }
+
+    .btn-cyber {
+        position: relative;
+        background: linear-gradient(135deg, rgba(0, 200, 255, 0.2), rgba(255, 0, 170, 0.2));
+        border: 1px solid #00ffff;
+        color: #00ffff;
+        padding: 10px 22px;
+        cursor: pointer;
+        font-weight: 600;
+        letter-spacing: 1px;
+        transition: all 0.3s;
+        clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+        overflow: hidden;
+    }
+
+    .btn-cyber::before {
+        content: "";
+        position: absolute;
+        top: 0; left: -100%;
+        width: 100%; height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.4), transparent);
+        transition: left 0.5s;
+    }
+
+    .btn-cyber:hover::before {
+        left: 100%;
+    }
+
+    .btn-cyber:hover {
+        background: linear-gradient(135deg, rgba(0, 200, 255, 0.4), rgba(255, 0, 170, 0.3));
+        box-shadow: 0 0 25px rgba(0, 255, 255, 0.5);
+        transform: translateY(-2px);
+    }
+
+    .btn-cyber:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-green {
+        border-color: #00ff88;
+        color: #00ff88;
+    }
+    .btn-green:hover {
+        box-shadow: 0 0 25px rgba(0, 255, 136, 0.5);
+    }
+
+    .btn-red {
+        border-color: #ff3366;
+        color: #ff3366;
+    }
+    .btn-red:hover {
+        box-shadow: 0 0 25px rgba(255, 51, 102, 0.5);
+    }
+
+    .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 14px;
+        border: 1px solid;
+        border-radius: 20px;
+        font-size: 13px;
+        letter-spacing: 1px;
+    }
+
+    .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        animation: blink 1.5s infinite;
+    }
+
+    .status-online { border-color: #00ff88; color: #00ff88; }
+    .status-online .status-dot { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+    
+    .status-offline { border-color: #ff3366; color: #ff3366; }
+    .status-offline .status-dot { background: #ff3366; box-shadow: 0 0 10px #ff3366; }
+    
+    .status-loading { border-color: #ffcc00; color: #ffcc00; }
+    .status-loading .status-dot { background: #ffcc00; box-shadow: 0 0 10px #ffcc00; }
+
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+
+    .chart-wrap {
+        position: relative;
+        height: 300px;
+    }
+
+    .section-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        color: #00ffff;
+    }
+
+    .section-title::before {
+        content: "";
+        width: 4px;
+        height: 20px;
+        background: linear-gradient(180deg, #00ffff, #ff00aa);
+    }
+
+    .divider-line {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.5), transparent);
+        margin: 20px 0;
+    }
+
+    .terminal-box {
+        background: rgba(0, 10, 20, 0.8);
+        border: 1px solid rgba(0, 255, 255, 0.2);
+        padding: 16px;
+        font-family: "Consolas", monospace;
+        font-size: 13px;
+        color: #00ff88;
+        line-height: 1.6;
+    }
+
+    .cyber-select {
+        background: rgba(0, 20, 40, 0.8);
+        border: 1px solid rgba(0, 255, 255, 0.3);
+        color: #00ffff;
+        padding: 10px 14px;
+        outline: none;
+        cursor: pointer;
+    }
+
+    .cyber-select option {
+        background: #0a1428;
+        color: #00ffff;
+    }
+
+    .corner-deco {
+        position: absolute;
+        width: 60px;
+        height: 60px;
+        border: 2px solid rgba(0, 255, 255, 0.4);
+        pointer-events: none;
+    }
+    .corner-tl { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+    .corner-br { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+</style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto relative z-10">
+        <!-- 顶部标题 -->
+        <div class="text-center mb-10">
+            <h1 class="text-4xl md:text-6xl font-bold glow-title mb-3">DEEPSEEK MONITOR</h1>
+            <p class="text-cyan-400/60 tracking-widest text-sm">API 密钥余额实时追踪终端 · 消耗可视化系统</p>
+        </div>
+
+        <!-- 密钥控制区 -->
+        <div class="cyber-card p-6 mb-6">
+            <div class="corner-deco corner-tl"></div>
+            <div class="corner-deco corner-br"></div>
+            
+            <div class="section-title">密钥控制终端</div>
+            
+            <div class="flex flex-wrap gap-4 items-end mb-5">
+                <div class="flex-1 min-w-[300px]">
+                    <label class="block text-xs text-cyan-400/60 mb-2 tracking-wider">API SECRET KEY</label>
+                    <input type="password" id="apiKey" class="cyber-input w-full" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                </div>
+                <button onclick="saveKey()" class="btn-cyber">保存密钥</button>
+                <button onclick="testConnection()" class="btn-cyber btn-green">连通测试</button>
+                <button onclick="clearKey()" class="btn-cyber btn-red">清除密钥</button>
+            </div>
+
+            <div class="flex flex-wrap justify-between items-center gap-4">
+                <div id="statusBox" class="status-indicator status-offline">
+                    <span class="status-dot"></span>
+                    <span id="statusText">未连接 · 等待密钥输入</span>
+                </div>
+                <div class="text-xs text-cyan-400/50 font-mono">
+                    LAST SYNC: <span id="lastUpdate">--:--:--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据面板 -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            <div class="stat-box">
+                <p class="text-xs text-cyan-400/60 mb-2 tracking-wider">总余额 TOTAL</p>
+                <p class="stat-value text-cyan-300" id="totalBalance">--</p>
+                <p class="text-xs text-cyan-500/50 mt-1">CNY 人民币</p>
+            </div>
+            <div class="stat-box">
+                <p class="text-xs text-purple-400/60 mb-2 tracking-wider">赠送 GRANTED</p>
+                <p class="stat-value text-purple-300" id="grantedBalance">--</p>
+                <p class="text-xs text-purple-500/50 mt-1">免费额度</p>
+            </div>
+            <div class="stat-box">
+                <p class="text-xs text-green-400/60 mb-2 tracking-wider">充值 TOPPED</p>
+                <p class="stat-value text-green-300" id="toppedBalance">--</p>
+                <p class="text-xs text-green-500/50 mt-1">自费金额</p>
+            </div>
+            <div class="stat-box warn">
+                <p class="text-xs text-red-400/60 mb-2 tracking-wider">今日消耗 TODAY</p>
+                <p class="stat-value text-red-300" id="todayUsage">¥ 0.00</p>
+                <p class="text-xs text-red-500/50 mt-1">当日累计</p>
+            </div>
+            <div class="stat-box col-span-2 md:col-span-1">
+                <p class="text-xs text-yellow-400/60 mb-2 tracking-wider">账户状态 STATUS</p>
+                <p class="stat-value text-yellow-300" id="accountStatus">--</p>
+                <p class="text-xs text-yellow-500/50 mt-1">可用性检测</p>
+            </div>
+        </div>
+
+        <!-- 双图表区 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- 饼图 -->
+            <div class="cyber-card p-6">
+                <div class="corner-deco corner-tl"></div>
+                <div class="corner-deco corner-br"></div>
+                <div class="section-title">余额构成分析</div>
+                <div class="chart-wrap">
+                    <canvas id="balancePieChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 消耗柱状图 -->
+            <div class="cyber-card p-6">
+                <div class="corner-deco corner-tl"></div>
+                <div class="corner-deco corner-br"></div>
+                <div class="section-title">每日消耗统计</div>
+                <div class="chart-wrap">
+                    <canvas id="usageBarChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 控制台 -->
+        <div class="cyber-card p-6">
+            <div class="corner-deco corner-tl"></div>
+            <div class="corner-deco corner-br"></div>
+            
+            <div class="section-title">系统控制台</div>
+
+            <div class="flex flex-wrap justify-between items-center gap-4 mb-5">
+                <div>
+                    <p class="text-sm text-cyan-400/80">自动刷新模式</p>
+                    <p class="text-xs text-cyan-400/40">开启后定时采样余额，消耗统计精度更高</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <select id="refreshInterval" class="cyber-select">
+                        <option value="0">关闭自动刷新</option>
+                        <option value="60000">每 1 分钟</option>
+                        <option value="300000" selected>每 5 分钟</option>
+                        <option value="600000">每 10 分钟</option>
+                    </select>
+                    <button onclick="refreshBalance()" class="btn-cyber">立即刷新</button>
+                </div>
+            </div>
+
+            <div class="divider-line"></div>
+
+            <div>
+                <p class="text-sm text-cyan-400/80 mb-3">连通性测试模块</p>
+                <div class="flex flex-wrap gap-3 items-center">
+                    <input type="text" id="testPrompt" class="cyber-input flex-1 min-w-[200px]" value="你好，请用一句话介绍自己">
+                    <button onclick="testChat()" class="btn-cyber btn-green">发送测试请求</button>
+                </div>
+                
+                <div id="testResult" class="terminal-box mt-4 hidden">
+                    <p class="text-cyan-400/60 mb-2">>>> AI RESPONSE:</p>
+                    <p id="testReply" class="text-green-300"></p>
+                    <p class="text-cyan-500/50 text-xs mt-3" id="testCost"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部 -->
+        <p class="text-center text-xs text-cyan-800 mt-8 tracking-widest">
+            ALL DATA STORED LOCALLY · DIRECT CONNECTION TO DEEPSEEK API · NO MIDDLE SERVER
+        </p>
+    </div>
+
+    <script>
+        const STORAGE_KEY = "deepseek_monitor_key";
+        const LAST_BALANCE_KEY = "deepseek_last_balance";
+        const DAILY_USAGE_KEY = "deepseek_daily_usage";
+        let pieChart = null;
+        let usageChart = null;
+        let refreshTimer = null;
+
+        // 初始化
+        window.onload = function() {
+            const savedKey = localStorage.getItem(STORAGE_KEY);
+            if (savedKey) {
+                document.getElementById("apiKey").value = savedKey;
+                setStatus("loading", "正在验证密钥...");
+                setTimeout(() => fetchBalance(), 500);
+            }
+            initCharts();
+            updateTodayUsage();
+            updateUsageChart();
+            document.getElementById("refreshInterval").addEventListener("change", setupAutoRefresh);
+        };
+
+        // 工具函数
+        function getTodayStr() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        }
+
+        function getDailyUsage() {
+            const data = localStorage.getItem(DAILY_USAGE_KEY);
+            return data ? JSON.parse(data) : {};
+        }
+
+        function saveDailyUsage(usage) {
+            localStorage.setItem(DAILY_USAGE_KEY, JSON.stringify(usage));
+        }
+
+        function updateTime() {
+            const now = new Date();
+            document.getElementById("lastUpdate").textContent = 
+                `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        }
+
+        // 密钥管理
+        function saveKey() {
+            const key = document.getElementById("apiKey").value.trim();
+            if (!key.startsWith("sk-")) {
+                alert("密钥格式错误，必须以 sk- 开头");
+                return;
+            }
+            localStorage.setItem(STORAGE_KEY, key);
+            setStatus("loading", "密钥已保存，验证中...");
+            fetchBalance();
+        }
+
+        function clearKey() {
+            if (!confirm("确认清除本地密钥？")) return;
+            localStorage.removeItem(STORAGE_KEY);
+            document.getElementById("apiKey").value = "";
+            setStatus("offline", "密钥已清除");
+            clearInterval(refreshTimer);
+        }
+
+        function getKey() {
+            return localStorage.getItem(STORAGE_KEY) || document.getElementById("apiKey").value.trim();
+        }
+
+        function setStatus(type, text) {
+            const box = document.getElementById("statusBox");
+            const txt = document.getElementById("statusText");
+            box.className = "status-indicator status-" + type;
+            txt.textContent = text;
+        }
+
+        // 余额查询
+        async function fetchBalance() {
+            const key = getKey();
+            if (!key) {
+                setStatus("offline", "未输入密钥");
+                return;
+            }
+
+            setStatus("loading", "正在查询余额数据...");
+
+            try {
+                const res = await fetch("https://api.deepseek.com/user/balance", {
+                    method: "GET",
+                    headers: {
+                        "Authorization": "Bearer " + key,
+                        "Accept": "application/json"
+                    }
+                });
+
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const data = await res.json();
+
+                const info = data.balance_infos[0];
+                const total = parseFloat(info.total_balance);
+                const lastBalance = parseFloat(localStorage.getItem(LAST_BALANCE_KEY) || "NaN");
+                
+                if (!isNaN(lastBalance)) {
+                    const diff = lastBalance - total;
+                    if (diff > 0.001) {
+                        const today = getTodayStr();
+                        const usage = getDailyUsage();
+                        usage[today] = (usage[today] || 0) + diff;
+                        saveDailyUsage(usage);
+                        updateTodayUsage();
+                        updateUsageChart();
+                    }
+                }
+                localStorage.setItem(LAST_BALANCE_KEY, total.toString());
+
+                updateBalanceUI(data);
+                setStatus("online", "连接正常 · 数据已同步");
+                updateTime();
+
+            } catch (e) {
+                setStatus("offline", "查询失败: " + e.message);
+                console.error(e);
+            }
+        }
+
+        function updateBalanceUI(data) {
+            const info = data.balance_infos[0];
+            const total = parseFloat(info.total_balance);
+            const granted = parseFloat(info.granted_balance);
+            const topped = parseFloat(info.topped_up_balance);
+
+            document.getElementById("totalBalance").textContent = "¥ " + total.toFixed(2);
+            document.getElementById("grantedBalance").textContent = "¥ " + granted.toFixed(2);
+            document.getElementById("toppedBalance").textContent = "¥ " + topped.toFixed(2);
+
+            const statusEl = document.getElementById("accountStatus");
+            if (data.is_available) {
+                statusEl.textContent = "正常";
+                statusEl.className = "stat-value text-green-300";
+            } else {
+                statusEl.textContent = "异常";
+                statusEl.className = "stat-value text-red-300";
+            }
+
+            updatePieChart(granted, topped);
+        }
+
+        function updateTodayUsage() {
+            const today = getTodayStr();
+            const usage = getDailyUsage();
+            const todayUse = usage[today] || 0;
+            document.getElementById("todayUsage").textContent = "¥ " + todayUse.toFixed(4);
+        }
+
+        // 图表初始化
+        function initCharts() {
+            // 饼图 - 炫酷霓虹配色
+            const pieCtx = document.getElementById("balancePieChart").getContext("2d");
+            pieChart = new Chart(pieCtx, {
+                type: "doughnut",
+                data: {
+                    labels: ["赠送余额", "充值余额"],
+                    datasets: [{
+                        data: [0, 0],
+                        backgroundColor: [
+                            "rgba(168, 85, 247, 0.8)",
+                            "rgba(0, 255, 136, 0.8)"
+                        ],
+                        borderColor: [
+                            "#a855f7",
+                            "#00ff88"
+                        ],
+                        borderWidth: 2,
+                        hoverOffset: 15,
+                        shadowBlur: 20
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: "bottom",
+                            labels: { 
+                                color: "#00ffff", 
+                                padding: 25,
+                                font: { size: 12, letterSpacing: 1 }
+                            }
+                        }
+                    },
+                    cutout: "65%",
+                    animation: {
+                        animateRotate: true,
+                        animateScale: true
+                    }
+                }
+            });
+
+            // 柱状图 - 赛博渐变
+            const usageCtx = document.getElementById("usageBarChart").getContext("2d");
+            const gradient = usageCtx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, "rgba(255, 0, 170, 0.9)");
+            gradient.addColorStop(1, "rgba(255, 51, 102, 0.3)");
+
+            usageChart = new Chart(usageCtx, {
+                type: "bar",
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: "当日消耗 (元)",
+                        data: [],
+                        backgroundColor: gradient,
+                        borderColor: "#ff00aa",
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        barThickness: 20
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: "#00ffff", font: { size: 10 } },
+                            grid: { color: "rgba(0, 255, 255, 0.1)" }
+                        },
+                        y: {
+                            ticks: { color: "#00ffff" },
+                            grid: { color: "rgba(0, 255, 255, 0.1)" },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function updatePieChart(granted, topped) {
+            pieChart.data.datasets[0].data = [granted, topped];
+            pieChart.update();
+        }
+
+        function updateUsageChart() {
+            const usage = getDailyUsage();
+            const days = Object.keys(usage).sort().slice(-7);
+            const values = days.map(d => usage[d].toFixed(4));
+            const labels = days.map(d => d.slice(5));
+            
+            usageChart.data.labels = labels;
+            usageChart.data.datasets[0].data = values;
+            usageChart.update();
+        }
+
+        // 自动刷新
+        function setupAutoRefresh() {
+            clearInterval(refreshTimer);
+            const interval = parseInt(document.getElementById("refreshInterval").value);
+            if (interval > 0) {
+                refreshTimer = setInterval(() => fetchBalance(), interval);
+            }
+        }
+
+        function refreshBalance() {
+            fetchBalance();
+        }
+
+        function testConnection() {
+            const key = getKey();
+            if (!key) {
+                alert("请先输入密钥");
+                return;
+            }
+            setStatus("loading", "连通性测试中...");
+            fetchBalance();
+        }
+
+        // 测试对话
+        async function testChat() {
+            const key = getKey();
+            if (!key) {
+                alert("请先输入密钥");
+                return;
+            }
+
+            const prompt = document.getElementById("testPrompt").value.trim();
+            if (!prompt) return;
+
+            const resultBox = document.getElementById("testResult");
+            const replyEl = document.getElementById("testReply");
+            const costEl = document.getElementById("testCost");
+            
+            resultBox.classList.remove("hidden");
+            replyEl.textContent = "正在建立连接...";
+            costEl.textContent = "";
+
+            try {
+                const startTime = Date.now();
+                const res = await fetch("https://api.deepseek.com/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + key
+                    },
+                    body: JSON.stringify({
+                        model: "deepseek-chat",
+                        messages: [{ role: "user", content: prompt }],
+                        max_tokens: 200
+                    })
+                });
+
+                const data = await res.json();
+                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+                if (data.choices && data.choices[0]) {
+                    replyEl.textContent = data.choices[0].message.content;
+                    const tokens = data.usage;
+                    costEl.textContent = 
+                        `耗时: ${duration}s | 输入: ${tokens.prompt_tokens} tokens | 输出: ${tokens.completion_tokens} tokens`;
+                    setTimeout(() => fetchBalance(), 1200);
+                } else {
+                    replyEl.textContent = "ERROR: " + (data.error?.message || "未知错误");
+                }
+            } catch (e) {
+                replyEl.textContent = "CONNECTION FAILED: " + e.message;
+            }
+        }
+    </script>
+</body>
+</html>
