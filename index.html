@@ -468,9 +468,7 @@
 
         // 初始化
         window.onload = function() {
-            // 启动实时时钟
             startRealClock();
-
             const savedKey = localStorage.getItem(STORAGE_KEY);
             if (savedKey) {
                 document.getElementById("apiKey").value = savedKey;
@@ -484,7 +482,7 @@
             document.getElementById("refreshInterval").addEventListener("change", setupAutoRefresh);
         };
 
-        // 实时时钟
+        // 实时毫秒时钟
         function startRealClock() {
             clockTimer = setInterval(() => {
                 const now = new Date();
@@ -496,12 +494,13 @@
             }, 10);
         }
 
-        // 工具函数
+        // 获取今日日期字符串
         function getTodayStr() {
             const d = new Date();
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         }
 
+        // 获取当前小时标识（日期 08h）
         function getHourKey() {
             const d = new Date();
             const date = getTodayStr();
@@ -509,22 +508,22 @@
             return `${date} ${hour}h`;
         }
 
+        // 读取/保存每日消耗
         function getDailyUsage() {
-            const data = localStorage.getItem(DAILY_USAGE_KEY);
-            return data ? JSON.parse(data) : {};
+            const raw = localStorage.getItem(DAILY_USAGE_KEY);
+            return raw ? JSON.parse(raw) : {};
+        }
+        function saveDailyUsage(obj) {
+            localStorage.setItem(DAILY_USAGE_KEY, JSON.stringify(obj));
         }
 
-        function saveDailyUsage(usage) {
-            localStorage.setItem(DAILY_USAGE_KEY, JSON.stringify(usage));
-        }
-
+        // 读取/保存每小时消耗
         function getHourlyUsage() {
-            const data = localStorage.getItem(HOURLY_USAGE_KEY);
-            return data ? JSON.parse(data) : {};
+            const raw = localStorage.getItem(HOURLY_USAGE_KEY);
+            return raw ? JSON.parse(raw) : {};
         }
-
-        function saveHourlyUsage(usage) {
-            localStorage.setItem(HOURLY_USAGE_KEY, JSON.stringify(usage));
+        function saveHourlyUsage(obj) {
+            localStorage.setItem(HOURLY_USAGE_KEY, JSON.stringify(obj));
         }
 
         function updateTime() {
@@ -533,7 +532,7 @@
                 `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
         }
 
-        // 密钥管理
+        // 密钥操作
         function saveKey() {
             const key = document.getElementById("apiKey").value.trim();
             if (!key.startsWith("sk-")) {
@@ -564,16 +563,14 @@
             txt.textContent = text;
         }
 
-        // 余额查询
+        // 请求余额核心逻辑
         async function fetchBalance() {
             const key = getKey();
             if (!key) {
                 setStatus("offline", "未输入密钥");
                 return;
             }
-
             setStatus("loading", "正在查询余额数据...");
-
             try {
                 const res = await fetch("https://api.deepseek.com/user/balance", {
                     method: "GET",
@@ -582,57 +579,59 @@
                         "Accept": "application/json"
                     }
                 });
-
                 if (!res.ok) throw new Error("HTTP " + res.status);
                 const data = await res.json();
-
                 const info = data.balance_infos[0];
                 const total = parseFloat(info.total_balance);
-                const lastBalance = parseFloat(localStorage.getItem(LAST_BALANCE_KEY) || "NaN");
-                
+                const lastBalanceRaw = localStorage.getItem(LAST_BALANCE_KEY);
+                const lastBalance = Number(lastBalanceRaw);
+
+                // 产生消耗时分别累加今日、当前小时
                 if (!isNaN(lastBalance)) {
                     const diff = lastBalance - total;
                     if (diff > 0.001) {
                         const today = getTodayStr();
                         const hourKey = getHourKey();
 
-                        // 日消耗
-                        const dailyUsage = getDailyUsage();
-                        dailyUsage[today] = Number((dailyUsage[today] || 0) + diff).toFixed(2);
-                        saveDailyUsage(dailyUsage);
+                        // 今日全天累计消耗
+                        const dailyData = getDailyUsage();
+                        let dayVal = Number(dailyData[today] || 0);
+                        dayVal = dayVal + diff;
+                        dailyData[today] = dayVal.toFixed(2);
+                        saveDailyUsage(dailyData);
 
-                        // 小时消耗
-                        const hourUsage = getHourlyUsage();
-                        hourUsage[hourKey] = Number((hourUsage[hourKey] || 0) + diff).toFixed(2);
-                        saveHourlyUsage(hourUsage);
+                        // 当前小时段累计消耗
+                        const hourData = getHourlyUsage();
+                        let hourVal = Number(hourData[hourKey] || 0);
+                        hourVal = hourVal + diff;
+                        hourData[hourKey] = hourVal.toFixed(2);
+                        saveHourlyUsage(hourData);
 
+                        // 刷新面板+两张图表
                         updateTodayUsage();
                         updateUsageChart();
                         updateHourChart();
                     }
                 }
                 localStorage.setItem(LAST_BALANCE_KEY, total.toString());
-
                 updateBalanceUI(data);
                 setStatus("online", "连接正常 · 数据已同步");
                 updateTime();
-
             } catch (e) {
                 setStatus("offline", "查询失败: " + e.message);
                 console.error(e);
             }
         }
 
+        // 余额面板渲染
         function updateBalanceUI(data) {
             const info = data.balance_infos[0];
             const total = parseFloat(info.total_balance);
             const granted = parseFloat(info.granted_balance);
             const topped = parseFloat(info.topped_up_balance);
-
             document.getElementById("totalBalance").textContent = "¥ " + total.toFixed(2);
             document.getElementById("grantedBalance").textContent = "¥ " + granted.toFixed(2);
             document.getElementById("toppedBalance").textContent = "¥ " + topped.toFixed(2);
-
             const statusEl = document.getElementById("accountStatus");
             if (data.is_available) {
                 statusEl.textContent = "正常";
@@ -641,20 +640,23 @@
                 statusEl.textContent = "异常";
                 statusEl.className = "stat-value text-red-300";
             }
-
             updatePieChart(granted, topped);
         }
 
+        // 今日消耗面板渲染，多层转数字杜绝NaN
         function updateTodayUsage() {
             const today = getTodayStr();
-            const usage = getDailyUsage();
-            const todayUse = Number(usage[today] || 0).toFixed(2);
-            document.getElementById("todayUsage").textContent = "¥ " + todayUse;
+            const dailyData = getDailyUsage();
+            let raw = dailyData[today];
+            let num = Number(raw);
+            // 仅当无法转为数字才置0，正常小数保留原值
+            if (isNaN(num)) num = 0;
+            document.getElementById("todayUsage").textContent = "¥ " + num.toFixed(2);
         }
 
-        // 图表初始化
+        // 初始化三张图表，柱子厚度统一12，纤细不臃肿
         function initCharts() {
-            // 饼图
+            // 余额饼图
             const pieCtx = document.getElementById("balancePieChart").getContext("2d");
             pieChart = new Chart(pieCtx, {
                 type: "doughnut",
@@ -662,32 +664,20 @@
                     labels: ["赠送余额", "充值余额"],
                     datasets: [{
                         data: [0, 0],
-                        backgroundColor: [
-                            "rgba(168, 85, 247, 0.8)",
-                            "rgba(0, 255, 136, 0.8)"
-                        ],
-                        borderColor: [
-                            "#a855f7",
-                            "#00ff88"
-                        ],
+                        backgroundColor: ["rgba(168, 85, 247, 0.8)","rgba(0, 255, 136, 0.8)"],
+                        borderColor: ["#a855f7","#00ff88"],
                         borderWidth: 2,
                         hoverOffset: 15
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: "bottom",
-                            labels: { color: "#00ffff", padding: 20 }
-                        }
-                    },
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { position: "bottom", labels: { color: "#00ffff", padding: 20 } } },
                     cutout: "65%"
                 }
             });
 
-            // 小时消耗图
+            // 小时消耗柱状图
             const hourCtx = document.getElementById("hourUsageBarChart").getContext("2d");
             const hourGrad = hourCtx.createLinearGradient(0,0,0,300);
             hourGrad.addColorStop(0, "rgba(255, 204, 0, 0.9)");
@@ -699,7 +689,8 @@
                     data: [],
                     backgroundColor: hourGrad,
                     borderColor: "#ffcc00",
-                    borderRadius: 4
+                    borderRadius: 4,
+                    barThickness: 12
                 }]},
                 options: {
                     responsive: true, maintainAspectRatio: false,
@@ -711,7 +702,7 @@
                 }
             });
 
-            // 日消耗图
+            // 七日每日消耗柱状图
             const usageCtx = document.getElementById("usageBarChart").getContext("2d");
             const gradient = usageCtx.createLinearGradient(0, 0, 0, 300);
             gradient.addColorStop(0, "rgba(255, 0, 170, 0.9)");
@@ -723,7 +714,8 @@
                     data: [],
                     backgroundColor: gradient,
                     borderColor: "#ff00aa",
-                    borderRadius: 4
+                    borderRadius: 4,
+                    barThickness: 12
                 }]},
                 options: {
                     responsive: true, maintainAspectRatio: false,
@@ -741,100 +733,87 @@
             pieChart.update();
         }
 
-        // 更新小时图表，只展示当天最近12小时
+        // 更新小时图表，仅展示今日最近12小时
         function updateHourChart() {
-            const allHour = getHourlyUsage();
+            const hourData = getHourlyUsage();
             const today = getTodayStr();
-            const todayHours = Object.keys(allHour).filter(k => k.startsWith(today)).sort();
-            const showHours = todayHours.slice(-12);
-            const labels = showHours.map(k => k.split(" ")[1]);
-            const values = showHours.map(k => Number(allHour[k]).toFixed(2));
+            const todayHourList = Object.keys(hourData).filter(k => k.startsWith(today)).sort();
+            const showList = todayHourList.slice(-12);
+            const labels = showList.map(k => k.split(" ")[1]);
+            const values = showList.map(k => {
+                let num = Number(hourData[k]);
+                return isNaN(num) ? 0.00 : num.toFixed(2);
+            });
             hourChart.data.labels = labels;
             hourChart.data.datasets[0].data = values;
             hourChart.update();
         }
 
+        // 更新七日每日消耗图表
         function updateUsageChart() {
-            const usage = getDailyUsage();
-            const days = Object.keys(usage).sort().slice(-7);
-            const values = days.map(d => Number(usage[d]).toFixed(2));
-            const labels = days.map(d => d.slice(5));
+            const dayData = getDailyUsage();
+            const dayList = Object.keys(dayData).sort().slice(-7);
+            const values = dayList.map(d => {
+                let num = Number(dayData[d]);
+                return isNaN(num) ? 0.00 : num.toFixed(2);
+            });
+            const labels = dayList.map(d => d.slice(5));
             usageChart.data.labels = labels;
             usageChart.data.datasets[0].data = values;
-            usageChart.update();
         }
 
-        // 自动刷新
+        // 自动刷新定时器切换
         function setupAutoRefresh() {
             clearInterval(refreshTimer);
-            const interval = parseInt(document.getElementById("refreshInterval").value);
-            if (interval > 0) {
-                refreshTimer = setInterval(() => fetchBalance(), interval);
-            }
+            const ms = parseInt(document.getElementById("refreshInterval").value);
+            if (ms > 0) refreshTimer = setInterval(fetchBalance, ms);
         }
-
-        function refreshBalance() {
-            fetchBalance();
-        }
-
+        function refreshBalance() { fetchBalance(); }
         function testConnection() {
-            const key = getKey();
-            if (!key) {
-                alert("请先输入密钥");
-                return;
-            }
+            const k = getKey();
+            if (!k) return alert("请先输入密钥");
             setStatus("loading", "连通性测试中...");
             fetchBalance();
         }
 
-        // 测试对话
+        // 对话测试接口
         async function testChat() {
             const key = getKey();
-            if (!key) {
-                alert("请先输入密钥");
-                return;
-            }
-
+            if (!key) return alert("请先输入密钥");
             const prompt = document.getElementById("testPrompt").value.trim();
             if (!prompt) return;
-
-            const resultBox = document.getElementById("testResult");
-            const replyEl = document.getElementById("testReply");
-            const costEl = document.getElementById("testCost");
-            
-            resultBox.classList.remove("hidden");
-            replyEl.textContent = "正在建立连接...";
-            costEl.textContent = "";
-
+            const box = document.getElementById("testResult");
+            const reply = document.getElementById("testReply");
+            const costText = document.getElementById("testCost");
+            box.classList.remove("hidden");
+            reply.textContent = "正在建立连接...";
+            costText.textContent = "";
             try {
-                const startTime = Date.now();
+                const start = Date.now();
                 const res = await fetch("https://api.deepseek.com/chat/completions", {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": "Bearer " + key
+                        "Content-Type":"application/json",
+                        "Authorization":"Bearer "+key
                     },
                     body: JSON.stringify({
-                        model: "deepseek-chat",
-                        messages: [{ role: "user", content: prompt }],
-                        max_tokens: 200
+                        model:"deepseek-chat",
+                        messages:[{role:"user",content:prompt}],
+                        max_tokens:200
                     })
                 });
-
-                const data = await res.json();
-                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-
-                if (data.choices && data.choices[0]) {
-                    replyEl.textContent = data.choices[0].message.content;
-                    const tokens = data.usage;
-                    costEl.textContent = 
-                        `耗时: ${duration}s | 输入: ${tokens.prompt_tokens} tokens | 输出: ${tokens.completion_tokens} tokens`;
-                    setTimeout(() => fetchBalance(), 1200);
+                const json = await res.json();
+                const dur = ((Date.now()-start)/1000).toFixed(2);
+                if (json.choices?.[0]) {
+                    reply.textContent = json.choices[0].message.content;
+                    const t = json.usage;
+                    costText.textContent = `耗时: ${dur}s | 输入: ${t.prompt_tokens} tokens | 输出: ${t.completion_tokens} tokens`;
+                    setTimeout(fetchBalance, 1200);
                 } else {
-                    replyEl.textContent = "ERROR: " + (data.error?.message || "未知错误");
+                    reply.textContent = "ERROR: " + (json.error?.message || "未知错误");
                 }
-            } catch (e) {
-                replyEl.textContent = "CONNECTION FAILED: " + e.message;
+            } catch(e) {
+                reply.textContent = "CONNECTION FAILED: " + e.message;
             }
         }
     </script>
