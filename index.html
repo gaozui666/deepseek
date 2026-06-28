@@ -539,7 +539,7 @@
                     if (diff > 0.001) {
                         const today = getTodayStr();
                         const usage = getDailyUsage();
-                        usage[today] = (usage[today] || 0) + diff;
+                        usage[today] = Number((usage[today] || 0) + diff).toFixed(2);
                         saveDailyUsage(usage);
                         updateTodayUsage();
                         updateUsageChart();
@@ -582,8 +582,8 @@
         function updateTodayUsage() {
             const today = getTodayStr();
             const usage = getDailyUsage();
-            const todayUse = usage[today] || 0;
-            document.getElementById("todayUsage").textContent = "¥ " + todayUse.toFixed(4);
+            const todayUse = Number(usage[today] || 0).toFixed(2);
+            document.getElementById("todayUsage").textContent = "¥ " + todayUse;
         }
 
         // 图表初始化
@@ -679,7 +679,7 @@
         function updateUsageChart() {
             const usage = getDailyUsage();
             const days = Object.keys(usage).sort().slice(-7);
-            const values = days.map(d => usage[d].toFixed(4));
+            const values = days.map(d => Number(usage[d]).toFixed(2));
             const labels = days.map(d => d.slice(5));
             
             usageChart.data.labels = labels;
