@@ -334,6 +334,7 @@
                 <button onclick="saveKey()" class="btn-cyber">保存密钥</button>
                 <button onclick="testConnection()" class="btn-cyber btn-green">连通测试</button>
                 <button onclick="clearKey()" class="btn-cyber btn-red">清除密钥</button>
+                <button onclick="resetTodayUsage()" class="btn-cyber">重置今日消耗</button>
             </div>
 
             <div class="flex flex-wrap justify-between items-center gap-4">
@@ -482,6 +483,23 @@
             document.getElementById("refreshInterval").addEventListener("change", setupAutoRefresh);
         };
 
+        // 重置今日消耗按钮
+        function resetTodayUsage() {
+            const today = getTodayStr();
+            const dailyData = getDailyUsage();
+            dailyData[today] = 0;
+            saveDailyUsage(dailyData);
+            const hourData = getHourlyUsage();
+            Object.keys(hourData).forEach(k=>{
+                if(k.startsWith(today)) delete hourData[k];
+            });
+            saveHourlyUsage(hourData);
+            updateTodayUsage();
+            updateHourChart();
+            updateUsageChart();
+            alert("今日消耗已清零");
+        }
+
         // 实时毫秒时钟
         function startRealClock() {
             clockTimer = setInterval(() => {
@@ -547,6 +565,7 @@
         function clearKey() {
             if (!confirm("确认清除本地密钥？")) return;
             localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(LAST_BALANCE_KEY);
             document.getElementById("apiKey").value = "";
             setStatus("offline", "密钥已清除");
             clearInterval(refreshTimer);
@@ -563,7 +582,7 @@
             txt.textContent = text;
         }
 
-        // 请求余额核心逻辑
+        // 请求余额核心逻辑（修复基准余额逻辑）
         async function fetchBalance() {
             const key = getKey();
             if (!key) {
@@ -584,35 +603,48 @@
                 const info = data.balance_infos[0];
                 const total = parseFloat(info.total_balance);
                 const lastBalanceRaw = localStorage.getItem(LAST_BALANCE_KEY);
-                const lastBalance = Number(lastBalanceRaw);
 
-                // 产生消耗时实时累加今日、当前小时数据，立刻刷新页面，无需等凌晨
-                if (!isNaN(lastBalance)) {
-                    const diff = lastBalance - total;
-                    if (diff > 0.001) {
-                        const today = getTodayStr();
-                        const hourKey = getHourKey();
-
-                        // 今日全天累计消耗（实时叠加）
-                        const dailyData = getDailyUsage();
-                        let dayVal = Number(dailyData[today] || 0);
-                        dayVal = dayVal + diff;
-                        dailyData[today] = dayVal.toFixed(2);
-                        saveDailyUsage(dailyData);
-
-                        // 当前小时段累计消耗（实时叠加）
-                        const hourData = getHourlyUsage();
-                        let hourVal = Number(hourData[hourKey] || 0);
-                        hourVal = hourVal + diff;
-                        hourData[hourKey] = hourVal.toFixed(2);
-                        saveHourlyUsage(hourData);
-
-                        // 实时刷新消耗面板、两张图表，数据立即上涨
-                        updateTodayUsage();
-                        updateUsageChart();
-                        updateHourChart();
-                    }
+                // 修复1：无上次余额时直接存入基准，不计算消耗
+                if(lastBalanceRaw === null || lastBalanceRaw === ""){
+                    localStorage.setItem(LAST_BALANCE_KEY, total.toString());
+                    console.log("首次获取余额，初始化基准值：", total);
+                    updateBalanceUI(data);
+                    setStatus("online", "基准余额已记录，下次扣费开始统计消耗");
+                    updateTime();
+                    return;
                 }
+
+                const lastBalance = Number(lastBalanceRaw);
+                const diff = lastBalance - total;
+                console.log("上次余额：", lastBalance, "当前余额：", total, "消耗差值：", diff);
+
+                // 产生消耗时实时累加今日、当前小时数据
+                if (diff > 0.001) {
+                    const today = getTodayStr();
+                    const hourKey = getHourKey();
+
+                    // 今日全天累计消耗
+                    const dailyData = getDailyUsage();
+                    let dayVal = Number(dailyData[today] || 0);
+                    dayVal = dayVal + diff;
+                    dailyData[today] = dayVal.toFixed(2);
+                    saveDailyUsage(dailyData);
+
+                    // 当前小时段累计消耗
+                    const hourData = getHourlyUsage();
+                    let hourVal = Number(hourData[hourKey] || 0);
+                    hourVal = hourVal + diff;
+                    hourData[hourKey] = hourVal.toFixed(2);
+                    saveHourlyUsage(hourData);
+
+                    console.log("今日新增消耗：", diff, "今日总消耗：", dayVal.toFixed(2));
+                    // 实时刷新
+                    updateTodayUsage();
+                    updateUsageChart();
+                    updateHourChart();
+                }
+
+                // 更新上次余额记录
                 localStorage.setItem(LAST_BALANCE_KEY, total.toString());
                 updateBalanceUI(data);
                 setStatus("online", "连接正常 · 数据已同步");
@@ -643,7 +675,7 @@
             updatePieChart(granted, topped);
         }
 
-        // 今日消耗面板实时渲染，实时显示当日全部累加总额
+        // 今日消耗面板渲染
         function updateTodayUsage() {
             const today = getTodayStr();
             const dailyData = getDailyUsage();
@@ -653,7 +685,7 @@
             document.getElementById("todayUsage").textContent = "¥ " + num.toFixed(2);
         }
 
-        // 初始化三张图表，柱子厚度统一12，纤细不臃肿
+        // 初始化三张图表
         function initCharts() {
             // 余额饼图
             const pieCtx = document.getElementById("balancePieChart").getContext("2d");
@@ -732,7 +764,7 @@
             pieChart.update();
         }
 
-        // 更新小时图表，仅展示今日最近12小时实时数据
+        // 更新小时图表
         function updateHourChart() {
             const hourData = getHourlyUsage();
             const today = getTodayStr();
@@ -748,7 +780,7 @@
             hourChart.update();
         }
 
-        // 更新七日每日消耗图表，当日数值实时上涨
+        // 更新每日图表
         function updateUsageChart() {
             const dayData = getDailyUsage();
             const dayList = Object.keys(dayData).sort().slice(-7);
@@ -776,7 +808,7 @@
             fetchBalance();
         }
 
-        // 对话测试接口，调用后自动刷新消耗实时数据
+        // 对话测试接口
         async function testChat() {
             const key = getKey();
             if (!key) return alert("请先输入密钥");
@@ -808,7 +840,6 @@
                     reply.textContent = json.choices[0].message.content;
                     const t = json.usage;
                     costText.textContent = `耗时: ${dur}s | 输入: ${t.prompt_tokens} tokens | 输出: ${t.completion_tokens} tokens`;
-                    // 请求完成立刻拉取余额，实时更新消耗
                     setTimeout(fetchBalance, 1200);
                 } else {
                     reply.textContent = "ERROR: " + (json.error?.message || "未知错误");
